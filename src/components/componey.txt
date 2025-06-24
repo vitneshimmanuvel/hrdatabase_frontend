@@ -1,0 +1,1030 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useFormik } from 'formik';
+import * as Yup from 'yup';
+import { 
+  Building, Search, Briefcase, Plus, X, User, 
+  MapPin, Users, DollarSign, Calendar, Mail, Phone, Globe
+} from 'lucide-react';
+
+// Helper function to get token
+const getToken = () => localStorage.getItem('token');
+
+// Helper function for logout
+const logout = (navigate) => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('role');
+  navigate('/login', { replace: true });
+};
+
+export default function CompanyDashboard() {
+  const navigate = useNavigate();
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState('');
+  const [companyData, setCompanyData] = useState(null);
+  const [jobRequests, setJobRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [formMessage, setFormMessage] = useState(null);
+  const [showJobDetails, setShowJobDetails] = useState(false);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [editingJob, setEditingJob] = useState(null);
+  const [newRequest, setNewRequest] = useState({
+    title: '',
+    domain: '',
+    description: '',
+    employment_type: '',
+    location: '',
+    salary_range: '',
+    count: '',
+    interview_time: ''
+  });
+
+  // State for profile editing
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [submittingProfile, setSubmittingProfile] = useState(false);
+  const [profileMessage, setProfileMessage] = useState(null);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = getToken();
+      if (!token) {
+        logout(navigate);
+        return;
+      }
+
+      try {
+        // Fetch company profile
+        const profileRes = await fetch('http://localhost:4000/users/profile', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (profileRes.status === 401) {
+          logout(navigate);
+          return;
+        }
+
+        if (!profileRes.ok) throw new Error('Failed to fetch profile');
+        const profileData = await profileRes.json();
+        setCompanyData(profileData);
+
+        // Fetch job requests
+        const jobsRes = await fetch('http://localhost:4000/jobs/requests', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (jobsRes.status === 401) {
+          logout(navigate);
+          return;
+        }
+        
+        if (!jobsRes.ok) throw new Error('Failed to fetch job requests');
+        const jobsData = await jobsRes.json();
+        setJobRequests(jobsData);
+
+        setLoading(false);
+      } catch (error) {
+        console.error('Error:', error);
+        setError(error.message);
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [navigate]);
+
+  const updateJobRequest = async (requestId, updatedFields) => {
+    try {
+      setFormSubmitting(true);
+      const token = getToken();
+      const response = await fetch(`http://localhost:4000/jobs/requests/${requestId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(updatedFields)
+      });
+
+      if (response.status === 401) {
+        logout(navigate);
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update job request');
+      }
+      
+      const updatedRequest = await response.json();
+      
+      setJobRequests(prevRequests => 
+        prevRequests.map(req => 
+          req.request_id === updatedRequest.request_id ? updatedRequest : req
+        )
+      );
+      
+      if (selectedJob?.request_id === updatedRequest.request_id) {
+        setSelectedJob(updatedRequest);
+      }
+      
+      setFormMessage({ 
+        type: 'success', 
+        message: 'Job request updated successfully!' 
+      });
+      return true;
+    } catch (error) {
+      console.error('Error updating job request:', error);
+      setFormMessage({ 
+        type: 'error', 
+        message: error.message || 'Failed to update job request' 
+      });
+      return false;
+    } finally {
+      setFormSubmitting(false);
+    }
+  };
+
+  const handleNewRequest = async (e) => {
+    e.preventDefault();
+    setFormSubmitting(true);
+    setFormMessage(null);
+
+    try {
+      const token = getToken();
+      if (!token) {
+        logout(navigate);
+        return;
+      }
+
+      const requestPayload = {
+        ...newRequest,
+        count: parseInt(newRequest.count, 10),
+        interview_time: newRequest.interview_time || null
+      };
+
+      const response = await fetch('http://localhost:4000/jobs/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(requestPayload)
+      });
+
+      if (response.status === 401) {
+        logout(navigate);
+        return;
+      }
+
+      if (!response.ok) throw new Error('Failed to create job request');
+      
+      const createdRequest = await response.json();
+      setJobRequests([...jobRequests, createdRequest]);
+      
+      setNewRequest({
+        title: '',
+        domain: '',
+        description: '',
+        employment_type: '',
+        location: '',
+        salary_range: '',
+        count: '',
+        interview_time: ''
+      });
+      
+      setShowForm(false);
+      setFormMessage({ 
+        type: 'success', 
+        message: 'Job request created successfully!' 
+      });
+    } catch (error) {
+      console.error('Error creating job request:', error);
+      setFormMessage({ type: 'error', message: 'Failed to create job request' });
+    } finally {
+      setFormSubmitting(false);
+    }
+  };
+
+  const filteredRequests = jobRequests.filter(r =>
+    (r.title?.toLowerCase() || '').includes(search.toLowerCase()) ||
+    (r.domain?.toLowerCase() || '').includes(search.toLowerCase())
+  );
+
+  // Validation schema for company profile
+  const companyProfileSchema = Yup.object().shape({
+    name: Yup.string().required('Company name is required'),
+    contact_person_phone: Yup.string()
+      .matches(/^[0-9]{10}$/, 'Must be exactly 10 digits')
+      .required('Contact phone is required'),
+    contact_email: Yup.string()
+      .email('Invalid email')
+      .required('Email is required'),
+    industry: Yup.string().required('Industry is required'),
+    location: Yup.string().required('Location is required'),
+    contact_person_name: Yup.string().required('Contact person is required'),
+    company_size: Yup.string().required('Company size is required'),
+    website_url: Yup.string().url('Invalid URL'),
+    about_us: Yup.string(),
+    hiring_status: Yup.string().required('Hiring status is required')
+  });
+
+  // Initialize Formik form for profile
+  const formik = useFormik({
+    initialValues: {
+      name: companyData?.companyname || companyData?.name || '',
+      contact_person_phone: companyData?.contact_person_phone || '',
+      contact_email: companyData?.contact_email || '',
+      industry: companyData?.industry || '',
+      location: companyData?.location || '',
+      contact_person_name: companyData?.contact_person_name || '',
+      company_size: companyData?.company_size || '',
+      website_url: companyData?.website_url || '',
+      about_us: companyData?.about_us || '',
+      hiring_status: companyData?.hiring_status || ''
+    },
+    enableReinitialize: true,
+    validationSchema: companyProfileSchema,
+    onSubmit: async (values) => {
+      setSubmittingProfile(true);
+      setProfileMessage(null);
+      
+      try {
+        const token = getToken();
+        if (!token) {
+          logout(navigate);
+          return;
+        }
+
+        const response = await fetch(`http://localhost:4000/api/companies/${companyData.company_id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(values)
+        });
+
+        if (response.status === 401) {
+          logout(navigate);
+          return;
+        }
+
+        if (!response.ok) throw new Error('Failed to update profile');
+        
+        fetchCompanyData(); // Refresh data
+        setShowProfileForm(false);
+        setProfileMessage({ 
+          type: 'success', 
+          message: 'Profile updated successfully!' 
+        });
+      } catch (error) {
+        console.error('Error updating profile:', error);
+        setProfileMessage({ 
+          type: 'error', 
+          message: error.message || 'Failed to update profile' 
+        });
+      } finally {
+        setSubmittingProfile(false);
+      }
+    }
+  });
+
+  if (loading) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <Building className="animate-spin text-blue-500 text-6xl mb-4" />
+        <p className="text-gray-600">Loading your dashboard...</p>
+      </div>
+    </div>
+  );
+
+  if (!companyData) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <Building className="text-gray-400 text-6xl mb-4" />
+        <p className="text-gray-600">Company data not available</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm">
+        <div className="container mx-auto px-4 py-2 flex justify-between items-center">
+          <h1 className="text-xl font-bold text-blue-800 flex items-center space-x-2">
+            <Building size={24} />
+            <span>{companyData.companyname || companyData.name}</span>
+          </h1>
+          <button onClick={() => setShowSidebar(true)} className="flex items-center space-x-2 text-blue-800">
+            <User size={24} />
+            <span>{companyData.companyname || companyData.name}</span>
+          </button>
+        </div>
+      </header>
+
+      <main className="container mx-auto p-4">
+        <div className="mb-6 flex justify-between items-center">
+          <div className="relative">
+            <Search className="absolute left-3 top-3 text-gray-400" size={20} />
+            <input
+              type="text"
+              placeholder="Search job roles or domains..."
+              className="w-full max-w-md p-3 pl-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex space-x-3">
+            <button
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center space-x-2"
+              onClick={() => setShowProfileForm(true)}
+            >
+              <User size={20} />
+              <span>Edit Profile</span>
+            </button>
+            <button
+              className="ml-4 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center space-x-2"
+              onClick={() => setShowForm(true)}
+            >
+              <Plus size={20} />
+              <span>Create Job Request</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Profile Edit Form */}
+        {showProfileForm && (
+          <div className="bg-white p-6 rounded-lg shadow mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-blue-800">Edit Company Profile</h2>
+              <button onClick={() => setShowProfileForm(false)}>
+                <X size={24} className="text-gray-500 hover:text-gray-700" />
+              </button>
+            </div>
+            
+            {profileMessage && (
+              <div className={`p-4 rounded-lg mb-4 ${
+                profileMessage.type === 'success' 
+                  ? 'bg-green-100 text-green-800' 
+                  : 'bg-red-100 text-red-800'
+              }`}>
+                {profileMessage.message}
+              </div>
+            )}
+            
+            <form onSubmit={formik.handleSubmit}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-700 mb-2">Company Name *</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    name="name"
+                    value={formik.values.name}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                  />
+                  {formik.touched.name && formik.errors.name && (
+                    <p className="text-red-500 text-sm mt-1">{formik.errors.name}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-gray-700 mb-2">Contact Person *</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    name="contact_person_name"
+                    value={formik.values.contact_person_name}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                  />
+                  {formik.touched.contact_person_name && formik.errors.contact_person_name && (
+                    <p className="text-red-500 text-sm mt-1">{formik.errors.contact_person_name}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-gray-700 mb-2">Contact Email *</label>
+                  <input
+                    type="email"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    name="contact_email"
+                    value={formik.values.contact_email}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                  />
+                  {formik.touched.contact_email && formik.errors.contact_email && (
+                    <p className="text-red-500 text-sm mt-1">{formik.errors.contact_email}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-gray-700 mb-2">Contact Phone *</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    name="contact_person_phone"
+                    value={formik.values.contact_person_phone}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                    placeholder="10-digit phone number"
+                  />
+                  {formik.touched.contact_person_phone && formik.errors.contact_person_phone && (
+                    <p className="text-red-500 text-sm mt-1">{formik.errors.contact_person_phone}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-gray-700 mb-2">Industry *</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    name="industry"
+                    value={formik.values.industry}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                  />
+                  {formik.touched.industry && formik.errors.industry && (
+                    <p className="text-red-500 text-sm mt-1">{formik.errors.industry}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-gray-700 mb-2">Location *</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    name="location"
+                    value={formik.values.location}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                  />
+                  {formik.touched.location && formik.errors.location && (
+                    <p className="text-red-500 text-sm mt-1">{formik.errors.location}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-gray-700 mb-2">Company Size *</label>
+                  <select
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    name="company_size"
+                    value={formik.values.company_size}
+                    onChange={formikhandleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                  >
+                    <option value="">Select Size</option>
+                    <option value="1-10">1-10 employees</option>
+                    <option value="11-50">11-50 employees</option>
+                    <option value="51-200">51-200 employees</option>
+                    <option value="201-500">201-500 employees</option>
+                    <option value="501-1000">501-1000 employees</option>
+                    <option value="1000+">1000+ employees</option>
+                  </select>
+                  {formik.touched.company_size && formik.errors.company_size && (
+                    <p className="text-red-500 text-sm mt-1">{formik.errors.company_size}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-gray-700 mb-2">Website</label>
+                  <input
+                    type="url"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    name="website_url"
+                    value={formik.values.website_url}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                    placeholder="https://example.com"
+                  />
+                  {formik.touched.website_url && formik.errors.website_url && (
+                    <p className="text-red-500 text-sm mt-1">{formik.errors.website_url}</p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-gray-700 mb-2">Hiring Status *</label>
+                  <select
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    name="hiring_status"
+                    value={formik.values.hiring_status}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                  >
+                    <option value="">Select Status</option>
+                    <option value="actively-hiring">Actively Hiring</option>
+                    <option value="selective-hiring">Selective Hiring</option>
+                    <option value="not-hiring">Not Hiring</option>
+                  </select>
+                  {formik.touched.hiring_status && formik.errors.hiring_status && (
+                    <p className="text-red-500 text-sm mt-1">{formik.errors.hiring_status}</p>
+                  )}
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-gray-700 mb-2">About Us</label>
+                  <textarea
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    rows={3}
+                    name="about_us"
+                    value={formik.values.about_us}
+                    onChange={formikhandleChange}
+                    onBlur={formik.handleBlur}
+                    disabled={submittingProfile}
+                    placeholder="Describe your company..."
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-3 mt-4">
+                <button
+                  type="button"
+                  className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300"
+                  onClick={() => setShowProfileForm(false)}
+                  disabled={submittingProfile}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+                  disabled={submittingProfile}
+                >
+                  {submittingProfile ? 'Updating...' : 'Update Profile'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Job Request Form */}
+        {showForm && (
+          <div className="bg-white p-6 rounded-lg shadow mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-blue-800">Create New Job Request</h2>
+              <button onClick={() => setShowForm(false)}>
+                <X size={24} className="text-gray-500 hover:text-gray-700" />
+              </button>
+            </div>
+            <form onSubmit={handleNewRequest}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-700 mb-2">Job Title *</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    value={newRequest.title}
+                    onChange={(e) => setNewRequest({ ...newRequest, title: e.target.value })}
+                    required
+                    disabled={formSubmitting}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 mb-2">Number of Positions *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    value={newRequest.count}
+                    onChange={(e) => setNewRequest({ ...newRequest, count: e.target.value })}
+                    required
+                    disabled={formSubmitting}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 mb-2">Domain *</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    value={newRequest.domain}
+                    onChange={(e) => setNewRequest({ ...newRequest, domain: e.target.value })}
+                    required
+                    disabled={formSubmitting}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 mb-2">Employment Type *</label>
+                  <select
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    value={newRequest.employment_type}
+                    onChange={(e) => setNewRequest({ ...newRequest, employment_type: e.target.value })}
+                    required
+                    disabled={formSubmitting}
+                  >
+                    <option value="">Select Type</option>
+                    <option value="Full-time">Full-time</option>
+                    <option value="Part-time">Part-time</option>
+                    <option value="Contract">Contract</option>
+                    <option value="Internship">Internship</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-gray-700 mb-2">Location *</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    value={newRequest.location}
+                    onChange={(e) => setNewRequest({ ...newRequest, location: e.target.value })}
+                    required
+                    disabled={formSubmitting}
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 mb-2">Interview Time</label>
+                  <input
+                    type="datetime-local"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    value={newRequest.interview_time}
+                    onChange={(e) => setNewRequest({ ...newRequest, interview_time: e.target.value })}
+                    disabled={formSubmitting}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-gray-700 mb-2">Salary Range</label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    value={newRequest.salary_range}
+                    onChange={(e) => setNewRequest({ ...newRequest, salary_range: e.target.value })}
+                    disabled={formSubmitting}
+                    placeholder="Example: 80,000 - 100,000"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-gray-700 mb-2">Job Description *</label>
+                  <textarea
+                    className="w-full p-3 border rounded-lg focus:outline-none"
+                    rows={4}
+                    value={newRequest.description}
+                    onChange={(e) => setNewRequest({ ...newRequest, description: e.target.value })}
+                    required
+                    disabled={formSubmitting}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-3 mt-4">
+                <button
+                  type="button"
+                  className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300"
+                  onClick={() => setShowForm(false)}
+                  disabled={formSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+                  disabled={formSubmitting}
+                >
+                  {formSubmitting ? 'Creating...' : 'Create Job Request'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {formMessage && (
+          <div className={`p-4 rounded-lg mb-6 ${
+            formMessage.type === 'success' 
+              ? 'bg-green-100 text-green-800' 
+              : 'bg-red-100 text-red-800'
+          }`}>
+            {formMessage.message}
+          </div>
+        )}
+
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold text-blue-800 border-b pb-2">Your Job Requests</h2>
+          
+          {filteredRequests.length > 0 ? (
+            filteredRequests.map(req => (
+              <div key={req.request_id} className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-blue-800">{req.title}</h3>
+                    <div className="flex items-center mt-1">
+                      <span className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded mr-2">
+                        {req.domain}
+                      </span>
+                      <span className="bg-green-100 text-green-800 text-sm px-2 py-1 rounded">
+                        {req.employment_type}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-gray-500">
+                      Created: {new Date(req.created_at).toLocaleDateString()}
+                    </p>
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      req.status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {req.status}
+                    </span>
+                  </div>
+                </div>
+                
+                <p className="text-gray-600 line-clamp-2 mb-4">{req.description}</p>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="flex items-center">
+                    <MapPin size={16} className="text-gray-500 mr-2" />
+                    <span>{req.location}</span>
+                  </div>
+                  <div className="flex items-center">
+                    <Users size={16} className="text-gray-500 mr-2" />
+                    <span>{req.count} positions</span>
+                  </div>
+                  <div className="flex items-center">
+                    <DollarSign size={16} className="text-gray-500 mr-2" />
+                    <span>{req.salary_range || 'Not specified'}</span>
+                  </div>
+                  <div className="flex items-center">
+                    <Calendar size={16} className="text-gray-500 mr-2" />
+                    <span>
+                      {req.interview_time 
+                        ? new Date(req.interview_time).toLocaleString() 
+                        : 'Not scheduled'}
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="mt-4 flex justify-end">
+                  <button
+                    className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+                    onClick={() => {
+                      setShowJobDetails(true);
+                      setSelectedJob(req);
+                    }}
+                  >
+                    View Details
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="bg-white p-6 rounded-lg shadow text-center">
+              <Briefcase className="mx-auto text-gray-400 text-4xl mb-4" />
+              <h3 className="text-lg font-bold mb-2">No job requests found</h3>
+              <p className="text-gray-600 mb-4">Create your first job request to get started</p>
+              <button
+                className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+                onClick={() => setShowForm(true)}
+              >
+                Create Job Request
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Job Details Modal */}
+        {showJobDetails && selectedJob && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-bold text-blue-800">Job Details</h2>
+                  <button onClick={() => setShowJobDetails(false)}>
+                    <X size={24} className="text-gray-500 hover:text-gray-700" />
+                  </button>
+                </div>
+                
+                {editingJob ? (
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    const success = await updateJobRequest(selectedJob.request_id, editingJob);
+                    if (success) {
+                      setEditingJob(null);
+                      setSelectedJob({...selectedJob, ...editingJob});
+                    }
+                  }}>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-gray-700 mb-2">Number of Positions *</label>
+                        <input
+                          type="number"
+                          min="1"
+                          className="w-full p-3 border rounded-lg focus:outline-none"
+                          value={editingJob.count}
+                          onChange={(e) => setEditingJob({...editingJob, count: e.target.value})}
+                          required
+                          disabled={formSubmitting}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-gray-700 mb-2">Interview Time</label>
+                        <input
+                          type="datetime-local"
+                          className="w-full p-3 border rounded-lg focus:outline-none"
+                          value={editingJob.interview_time || ''}
+                          onChange={(e) => setEditingJob({...editingJob, interview_time: e.target.value})}
+                          disabled={formSubmitting}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-gray-700 mb-2">Status *</label>
+                        <select
+                          className="w-full p-3 border rounded-lg focus:outline-none"
+                          value={editingJob.status}
+                          onChange={(e) => setEditingJob({...editingJob, status: e.target.value})}
+                          required
+                          disabled={formSubmitting}
+                        >
+                          <option value="open">Open</option>
+                          <option value="closed">Closed</option>
+                          <option value="in-progress">In Progress</option>
+                        </select>
+                      </div>
+                      
+                      <div className="flex justify-end space-x-3 mt-4">
+                        <button
+                          type="button"
+                          className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300"
+                          onClick={() => setEditingJob(null)}
+                          disabled={formSubmitting}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+                          disabled={formSubmitting}
+                        >
+                          {formSubmitting ? 'Updating...' : 'Update Job'}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-xl font-bold">{selectedJob.title}</h3>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                          {selectedJob.domain}
+                        </span>
+                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm">
+                          {selectedJob.employment_type}
+                        </span>
+                        <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-sm">
+                          {selectedJob.count} positions
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="font-semibold text-gray-700">Location</h4>
+                        <p>{selectedJob.location}</p>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-700">Salary Range</h4>
+                        <p>{selectedJob.salary_range || 'Not specified'}</p>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-700">Interview Time</h4>
+                        <p>
+                          {selectedJob.interview_time 
+                            ? new Date(selectedJob.interview_time).toLocaleString() 
+                            : 'Not scheduled'}
+                        </p>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-700">Status</h4>
+                        <p className={`inline-block px-2 py-1 rounded ${
+                          selectedJob.status === 'open' 
+                            ? 'bg-green-100 text-green-800' 
+                            : selectedJob.status === 'closed'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {selectedJob.status}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-semibold text-gray-700 mb-2">Job Description</h4>
+                      <p className="text-gray-600 whitespace-pre-line">{selectedJob.description}</p>
+                    </div>
+                    
+                    <div className="flex justify-between">
+                      <button 
+                        className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300"
+                        onClick={() => setShowJobDetails(false)}
+                      >
+                        Close
+                      </button>
+                      <button 
+                        className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+                        onClick={() => setEditingJob({
+                          count: selectedJob.count,
+                          interview_time: selectedJob.interview_time,
+                          status: selectedJob.status
+                        })}>
+                        Edit Details
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Simplified Sidebar */}
+        {showSidebar && (
+          <div className="fixed inset-y-0 right-0 w-80 bg-white shadow-lg z-50">
+            <div className="p-4 border-b flex items-center">
+              <Building className="text-blue-500 mr-3" size={28} />
+              <div>
+                <h3 className="font-bold text-lg">{companyData.companyname || companyData.name}</h3>
+                <p className="text-sm text-gray-600">{companyData.contact_email}</p>
+              </div>
+              <button
+                className="ml-auto text-gray-500 hover:text-gray-700"
+                onClick={() => setShowSidebar(false)}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <h4 className="font-semibold text-gray-700 mb-2">Contact Information</h4>
+                <div className="flex items-center mb-1">
+                  <User size={16} className="text-gray-500 mr-2" />
+                  <span>{companyData.contact_person_name}</span>
+                </div>
+                <div className="flex items-center mb-1">
+                  <Phone size={16} className="text-gray-500 mr-2" />
+                  <span>{companyData.contact_person_phone}</span>
+                </div>
+                <div className="flex items-center">
+                  <Mail size={16} className="text-gray-500 mr-2" />
+                  <span>{companyData.contact_email}</span>
+                </div>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <h4 className="font-semibold text-gray-700 mb-2">Company Details</h4>
+                <div className="flex items-center mb-1">
+                  <Building size={16} className="text-gray-500 mr-2" />
+                  <span>{companyData.industry}</span>
+                </div>
+                <div className="flex items-center mb-1">
+                  <MapPin size={16} className="text-gray-500 mr-2" />
+                  <span>{companyData.location}</span>
+                </div>
+                <div className="flex items-center mb-1">
+                  <Users size={16} className="text-gray-500 mr-2" />
+                  <span>{companyData.company_size || 'Not specified'}</span>
+                </div>
+                <div className="flex items-center">
+                  <Globe size={16} className="text-gray-500 mr-2" />
+                  <span>{companyData.website_url || 'No website'}</span>
+                </div>
+              </div>
+              
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <h4 className="font-semibold text-gray-700 mb-2">Hiring Status</h4>
+                <span className={`px-2 py-1 rounded text-sm ${
+                  companyData.hiring_status === 'actively-hiring' 
+                    ? 'bg-green-100 text-green-800' 
+                    : companyData.hiring_status === 'not-hiring'
+                      ? 'bg-red-100 text-red-800'
+                      : 'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {companyData.hiring_status || 'Not specified'}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-4 border-t">
+              <button 
+                className="w-full bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600"
+                onClick={() => {
+                  logout(navigate);
+                }}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
