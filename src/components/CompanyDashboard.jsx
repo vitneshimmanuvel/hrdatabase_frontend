@@ -4,7 +4,7 @@ import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { 
   Building, Search, Briefcase, Plus, X, User, 
-  MapPin, Users, Calendar, Mail, Phone, Globe
+  MapPin, Users, Mail, Phone, Globe
 } from 'lucide-react';
 import { getToken, logout } from '../utils/auth';
 
@@ -18,8 +18,7 @@ const jobRequestSchema = Yup.object().shape({
   salary_range: Yup.string(),
   count: Yup.number()
     .required('Number of positions is required')
-    .min(1, 'Must be at least 1'),
-  interview_time: Yup.date().nullable()
+    .min(1, 'Must be at least 1')
 });
 
 const companyProfileSchema = Yup.object().shape({
@@ -35,8 +34,7 @@ const companyProfileSchema = Yup.object().shape({
   contact_person_name: Yup.string().required('Contact person is required'),
   company_size: Yup.string().required('Company size is required'),
   website_url: Yup.string().url('Invalid URL'),
-  about_us: Yup.string(),
-  hiring_status: Yup.string().required('Hiring status is required')
+  about_us: Yup.string()
 });
 
 export default function CompanyDashboard() {
@@ -63,7 +61,7 @@ export default function CompanyDashboard() {
       location: '',
       salary_range: '',
       count: '',
-      interview_time: ''
+      status: 'open'
     },
     validationSchema: jobRequestSchema,
     onSubmit: async (values) => {
@@ -86,7 +84,6 @@ export default function CompanyDashboard() {
           body: JSON.stringify({
             ...values,
             count: parseInt(values.count, 10),
-            interview_time: values.interview_time || null
           })
         });
 
@@ -123,16 +120,21 @@ export default function CompanyDashboard() {
       contact_person_name: '',
       company_size: '',
       website_url: '',
-      about_us: '',
-      hiring_status: ''
+      about_us: ''
     },
     validationSchema: companyProfileSchema,
     onSubmit: async (values) => {
       try {
+        if (!companyData?.company_id || isNaN(Number(companyData.company_id))) {
+          setApiMessage({ type: 'error', message: 'No valid company ID found. Please reload and try again.' });
+          return;
+        }
+
         const token = getToken();
         if (!token) return logout(navigate);
-        
-        const response = await fetch(`http://localhost:4000/api/companies/${companyData.company_id}`, {
+
+        const companyIdNum = Number(companyData.company_id);
+        const response = await fetch(`http://localhost:4000/api/companies/${companyIdNum}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -170,7 +172,6 @@ export default function CompanyDashboard() {
       const data = await response.json();
       setCompanyData(data);
       
-      // Set initial values for profile form
       profileFormik.setValues({
         name: data.companyname || data.name || '',
         contact_person_phone: data.contact_person_phone || '',
@@ -180,8 +181,7 @@ export default function CompanyDashboard() {
         contact_person_name: data.contact_person_name || '',
         company_size: data.company_size || '',
         website_url: data.website_url || '',
-        about_us: data.about_us || '',
-        hiring_status: data.hiring_status || ''
+        about_us: data.about_us || ''
       });
     } catch (error) {
       console.error('Error fetching company data:', error);
@@ -230,43 +230,14 @@ export default function CompanyDashboard() {
       location: job.location,
       salary_range: job.salary_range || '',
       count: job.count.toString(),
-      interview_time: job.interview_time || ''
+      status: job.status || 'open'
     });
     setShowJobForm(true);
   };
 
-  // Filter job requests based on active tab
   const getFilteredRequests = () => {
-    if (activeTab === 'active') {
-      return jobRequests.filter(job => job.status === 'open');
-    } else if (activeTab === 'placed') {
-      // Mock data for placed positions
-      return [
-        {
-          request_id: 'placed-1',
-          title: 'Senior Developer',
-          domain: 'Technology',
-          employment_type: 'Full-time',
-          count: 3,
-          location: 'Mumbai',
-          salary_range: '1,500,000 - 2,000,000',
-          status: 'placed',
-          created_at: new Date().toISOString(),
-          description: 'Successfully placed candidates for senior developer roles'
-        },
-        {
-          request_id: 'placed-2',
-          title: 'UX Designer',
-          domain: 'Design',
-          employment_type: 'Full-time',
-          count: 2,
-          location: 'Bangalore',
-          salary_range: '1,200,000 - 1,500,000',
-          status: 'placed',
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-          description: 'Placed UX designers in top companies'
-        }
-      ];
+    if (activeTab === 'placed') {
+      return [];
     }
     return jobRequests.filter(r =>
       (r.title?.toLowerCase() || '').includes(search.toLowerCase()) ||
@@ -350,12 +321,6 @@ export default function CompanyDashboard() {
               Your Job Requests
             </button>
             <button
-              className={`px-4 py-2 font-medium text-sm ${activeTab === 'active' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              onClick={() => setActiveTab('active')}
-            >
-              Active Job Requests
-            </button>
-            <button
               className={`px-4 py-2 font-medium text-sm ${activeTab === 'placed' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
               onClick={() => setActiveTab('placed')}
             >
@@ -396,7 +361,7 @@ export default function CompanyDashboard() {
                 
                 <p className="text-gray-600 line-clamp-2 mb-4">{req.description}</p>
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                   <div className="flex items-center">
                     <MapPin size={16} className="text-gray-500 mr-2" />
                     <span>{req.location}</span>
@@ -409,35 +374,25 @@ export default function CompanyDashboard() {
                     <span className="text-gray-500 mr-1">Rs</span>
                     <span>{req.salary_range || 'Not specified'}</span>
                   </div>
-                  <div className="flex items-center">
-                    <Calendar size={16} className="text-gray-500 mr-2" />
-                    <span>
-                      {req.interview_time 
-                        ? new Date(req.interview_time).toLocaleString() 
-                        : 'Not scheduled'}
-                    </span>
-                  </div>
                 </div>
                 
-                {activeTab !== 'placed' && (
-                  <div className="mt-4 flex justify-end gap-2">
-                    <button
-                      className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300"
-                      onClick={() => handleEditJob(req)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
-                      onClick={() => {
-                        setSelectedJob(req);
-                        setShowJobDetails(true);
-                      }}
-                    >
-                      View Details
-                    </button>
-                  </div>
-                )}
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300"
+                    onClick={() => handleEditJob(req)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+                    onClick={() => {
+                      setSelectedJob(req);
+                      setShowJobDetails(true);
+                    }}
+                  >
+                    View Details
+                  </button>
+                </div>
               </div>
             ))
           ) : (
@@ -485,11 +440,12 @@ export default function CompanyDashboard() {
                       <label className="block text-gray-700 mb-2">Job Title *</label>
                       <input
                         type="text"
-                        className="w-full p-3 border rounded-lg focus:outline-none"
+                        className={`w-full p-3 border rounded-lg focus:outline-none ${selectedJob ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         name="title"
                         value={jobFormik.values.title}
                         onChange={jobFormik.handleChange}
                         onBlur={jobFormik.handleBlur}
+                        disabled={!!selectedJob}
                       />
                       {jobFormik.touched.title && jobFormik.errors.title && (
                         <p className="text-red-500 text-sm mt-1">{jobFormik.errors.title}</p>
@@ -516,11 +472,12 @@ export default function CompanyDashboard() {
                       <label className="block text-gray-700 mb-2">Domain *</label>
                       <input
                         type="text"
-                        className="w-full p-3 border rounded-lg focus:outline-none"
+                        className={`w-full p-3 border rounded-lg focus:outline-none ${selectedJob ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         name="domain"
                         value={jobFormik.values.domain}
                         onChange={jobFormik.handleChange}
                         onBlur={jobFormik.handleBlur}
+                        disabled={!!selectedJob}
                       />
                       {jobFormik.touched.domain && jobFormik.errors.domain && (
                         <p className="text-red-500 text-sm mt-1">{jobFormik.errors.domain}</p>
@@ -530,11 +487,12 @@ export default function CompanyDashboard() {
                     <div>
                       <label className="block text-gray-700 mb-2">Employment Type *</label>
                       <select
-                        className="w-full p-3 border rounded-lg focus:outline-none"
+                        className={`w-full p-3 border rounded-lg focus:outline-none ${selectedJob ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         name="employment_type"
                         value={jobFormik.values.employment_type}
                         onChange={jobFormik.handleChange}
                         onBlur={jobFormik.handleBlur}
+                        disabled={!!selectedJob}
                       >
                         <option value="">Select Type</option>
                         <option value="Full-time">Full-time</option>
@@ -551,28 +509,33 @@ export default function CompanyDashboard() {
                       <label className="block text-gray-700 mb-2">Location *</label>
                       <input
                         type="text"
-                        className="w-full p-3 border rounded-lg focus:outline-none"
+                        className={`w-full p-3 border rounded-lg focus:outline-none ${selectedJob ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         name="location"
                         value={jobFormik.values.location}
                         onChange={jobFormik.handleChange}
                         onBlur={jobFormik.handleBlur}
+                        disabled={!!selectedJob}
                       />
                       {jobFormik.touched.location && jobFormik.errors.location && (
                         <p className="text-red-500 text-sm mt-1">{jobFormik.errors.location}</p>
                       )}
                     </div>
                     
-                    <div>
-                      <label className="block text-gray-700 mb-2">Interview Time</label>
-                      <input
-                        type="datetime-local"
-                        className="w-full p-3 border rounded-lg focus:outline-none"
-                        name="interview_time"
-                        value={jobFormik.values.interview_time}
-                        onChange={jobFormik.handleChange}
-                        onBlur={jobFormik.handleBlur}
-                      />
-                    </div>
+                    {selectedJob && (
+                      <div>
+                        <label className="block text-gray-700 mb-2">Status *</label>
+                        <select
+                          className="w-full p-3 border rounded-lg focus:outline-none"
+                          name="status"
+                          value={jobFormik.values.status}
+                          onChange={jobFormik.handleChange}
+                          onBlur={jobFormik.handleBlur}
+                        >
+                          <option value="open">Open</option>
+                          <option value="closed">Closed</option>
+                        </select>
+                      </div>
+                    )}
                     
                     <div className="md:col-span-2">
                       <label className="block text-gray-700 mb-2">Salary Range</label>
@@ -580,12 +543,13 @@ export default function CompanyDashboard() {
                         <span className="mr-2 font-medium">Rs</span>
                         <input
                           type="text"
-                          className="w-full p-3 border rounded-lg focus:outline-none"
+                          className={`w-full p-3 border rounded-lg focus:outline-none ${selectedJob ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                           name="salary_range"
                           value={jobFormik.values.salary_range}
                           onChange={jobFormik.handleChange}
                           onBlur={jobFormik.handleBlur}
                           placeholder="Example: 80,000 - 100,000"
+                          disabled={!!selectedJob}
                         />
                       </div>
                     </div>
@@ -593,12 +557,13 @@ export default function CompanyDashboard() {
                     <div className="md:col-span-2">
                       <label className="block text-gray-700 mb-2">Job Description *</label>
                       <textarea
-                        className="w-full p-3 border rounded-lg focus:outline-none"
+                        className={`w-full p-3 border rounded-lg focus:outline-none ${selectedJob ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                         rows={4}
                         name="description"
                         value={jobFormik.values.description}
                         onChange={jobFormik.handleChange}
                         onBlur={jobFormik.handleBlur}
+                        disabled={!!selectedJob}
                       />
                       {jobFormik.touched.description && jobFormik.errors.description && (
                         <p className="text-red-500 text-sm mt-1">{jobFormik.errors.description}</p>
@@ -663,14 +628,6 @@ export default function CompanyDashboard() {
                     <div>
                       <h4 className="font-semibold text-gray-700">Salary Range</h4>
                       <p>Rs {selectedJob.salary_range || 'Not specified'}</p>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-700">Interview Time</h4>
-                      <p>
-                        {selectedJob.interview_time 
-                          ? new Date(selectedJob.interview_time).toLocaleString() 
-                          : 'Not scheduled'}
-                      </p>
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-700">Status</h4>
@@ -779,9 +736,7 @@ export default function CompanyDashboard() {
                         name="contact_person_phone"
                         value={profileFormik.values.contact_person_phone}
                         onChange={(e) => {
-                          // Allow only numbers
                           const value = e.target.value.replace(/\D/g, '');
-                          // Limit to 10 digits
                           if (value.length <= 10) {
                             profileFormik.setFieldValue('contact_person_phone', value);
                           }
@@ -861,15 +816,6 @@ export default function CompanyDashboard() {
                     {profileFormik.touched.website_url && profileFormik.errors.website_url && (
                       <p className="text-red-500 text-sm mt-1">{profileFormik.errors.website_url}</p>
                     )}
-                  </div>
-                  
-                  <div className="hidden">
-                    <input
-                      type="text"
-                      name="hiring_status"
-                      value={profileFormik.values.hiring_status}
-                      onChange={profileFormik.handleChange}
-                    />
                   </div>
                   
                   <div>

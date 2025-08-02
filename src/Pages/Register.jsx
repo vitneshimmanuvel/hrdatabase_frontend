@@ -64,7 +64,8 @@ export default function Register() {
 
   const checkEmail = async (email) => {
     try {
-      const res = await fetch(`http://localhost:4000/auth/check-email?email=${email}`);
+      // const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/check-email?email=${email}`);
+       const res = await fetch(`http://localhost:4000/auth/check-email?email=${email}`);
       const data = await res.json();
       setEmailExists(data.exists);
     } catch (err) {
@@ -93,7 +94,7 @@ export default function Register() {
 
       const payload = { role, ...form };
 
-      const res = await fetch('http://localhost:4000/auth/register', {
+      const res = await fetch(`http://localhost:4000/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -183,7 +184,6 @@ export default function Register() {
                 <p className="text-red-500 text-sm mt-1">This email is already registered</p>
               )}
             </div>
-
             <div className="flex items-center border rounded-lg">
               <Lock className="text-primary-green m-2" />
               <input
@@ -403,7 +403,7 @@ export default function Register() {
               >
                 {showPassword ? <EyeOff /> : <Eye />}
               </button>
-            </div>
+             </div>
 
             <div className="flex items-center border rounded-lg">
               <Lock className="text-primary-green m-2" />

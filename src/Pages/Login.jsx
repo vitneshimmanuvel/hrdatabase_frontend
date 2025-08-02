@@ -27,7 +27,7 @@ export default function Login() {
         alert(data.error || 'Login failed');
         return;
       }
-
+      
       // Store token and user info - CORRECTED VERSION
       setToken(data.token); // Store token in localStorage
       setUser({ role: data.role }); // Store user role
