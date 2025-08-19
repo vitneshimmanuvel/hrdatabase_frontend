@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom';    
+import { Link } from 'react-router-dom';  
+import { API_BASE_URL } from '../config/api';   
 const Unauthorized = () => {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">

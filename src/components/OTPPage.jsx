@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Lock } from 'lucide-react';
-
+import { API_BASE_URL } from '../config/api'; 
 export default function OTPPage() {
   const location = useLocation();
   const [email] = useState(location.state?.email || '');
@@ -11,8 +11,15 @@ export default function OTPPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [resendDisabled, setResendDisabled] = useState(true);
-  const [countdown, setCountdown] = useState(180); // 3 minutes
+  const [countdown, setCountdown] = useState(600); // 10 minutes
   const navigate = useNavigate();
+
+  // Redirect if no email
+  useEffect(() => {
+    if (!email) {
+      navigate('/forgot-password');
+    }
+  }, [email, navigate]);
 
   // Countdown timer
   useEffect(() => {
@@ -35,7 +42,7 @@ export default function OTPPage() {
   const handleResendOTP = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/auth/resend-otp', {
+      const res = await fetch(`${API_BASE_URL}/auth/resend-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -45,7 +52,7 @@ export default function OTPPage() {
       if (res.ok) {
         setMessage('New OTP sent!');
         setResendDisabled(true);
-        setCountdown(180);
+        setCountdown(600); // Reset to 10 minutes
       } else {
         throw new Error(data.error || 'Could not resend OTP');
       }
@@ -64,8 +71,8 @@ export default function OTPPage() {
       return;
     }
 
-    if (newPassword.length < 6) {
-      setMessage('Password must be at least 6 characters');
+    if (newPassword.length < 8) {
+      setMessage('Password must be at least 8 characters');
       return;
     }
 
@@ -91,6 +98,10 @@ export default function OTPPage() {
     }
   };
 
+  if (!email) {
+    return null; // Will redirect
+  }
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-white to-primary-green p-4">
       <form
@@ -101,7 +112,7 @@ export default function OTPPage() {
           Reset Password
         </h2>
         {message && (
-          <p className={`mb-4 text-center ${message.includes('success') ? 'text-green-600' : 'text-red-600'}`}>
+          <p className={`mb-4 text-center ${message.includes('success') || message.includes('sent') ? 'text-green-600' : 'text-red-600'}`}>
             {message}
           </p>
         )}
@@ -146,7 +157,7 @@ export default function OTPPage() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="w-full p-3 focus:outline-none"
               placeholder="New Password"
             />
@@ -162,7 +173,7 @@ export default function OTPPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="w-full p-3 focus:outline-none"
               placeholder="Confirm Password"
             />
@@ -188,7 +199,7 @@ export default function OTPPage() {
             className={`text-primary-green font-semibold hover:underline
               ${resendDisabled ? 'text-gray-400 cursor-not-allowed' : ''}`}
           >
-            Resend OTP
+            {resendDisabled ? `Resend OTP (${formatTime(countdown)})` : 'Resend OTP'}
           </button>
         </div>
       </form>

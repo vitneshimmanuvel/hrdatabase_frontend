@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Lock, Eye, EyeOff } from 'lucide-react';
-
+import { API_BASE_URL } from '../config/api'; 
 export default function ResetPasswordPage() {
-  const [newPassword, setNewPassword] = useState('');
+  const [password, setPassword] = useState(''); // ✅ Changed from newPassword to password
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -19,17 +19,22 @@ export default function ResetPasswordPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (newPassword !== confirmPassword) {
+    if (password !== confirmPassword) {
       setMessage('Passwords do not match');
+      return;
+    }
+    
+    if (password.length < 8) { // ✅ Added validation to match backend
+      setMessage('Password must be at least 8 characters long');
       return;
     }
     
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/auth/reset-password', {
+      const res = await fetch(`${API_BASE_URL}/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, newPassword, confirmPassword }),
+        body: JSON.stringify({ token, password }), // ✅ Correct body - only token and password
       });
       
       const data = await res.json();
@@ -45,6 +50,24 @@ export default function ResetPasswordPage() {
       setLoading(false);
     }
   };
+
+  // Show error if no token
+  if (!token) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-white to-primary-green p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md text-center">
+          <h2 className="text-2xl font-bold text-red-600 mb-4">Invalid Reset Link</h2>
+          <p className="text-gray-600 mb-4">This password reset link is invalid or has expired.</p>
+          <button 
+            onClick={() => navigate('/forgot-password')}
+            className="bg-[#1c266a] hover:bg-[#1da46f] text-white py-2 px-4 rounded-lg"
+          >
+            Request New Reset Link
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-white to-primary-green p-4">
@@ -66,10 +89,10 @@ export default function ResetPasswordPage() {
             <Lock className="text-primary-green m-2" />
             <input
               type={showPassword ? 'text' : 'password'}
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              value={password} // ✅ Updated variable name
+              onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8} // ✅ Added minLength validation
               className="w-full p-3 focus:outline-none"
               placeholder="New Password"
             />
@@ -92,7 +115,7 @@ export default function ResetPasswordPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="w-full p-3 focus:outline-none"
               placeholder="Confirm Password"
             />
@@ -108,7 +131,7 @@ export default function ResetPasswordPage() {
 
         <button
           type="submit"
-          disabled={loading || !token}
+          disabled={loading}
           className={`w-full py-3 rounded-lg font-semibold transition
             ${loading
               ? 'bg-gray-400 cursor-not-allowed'

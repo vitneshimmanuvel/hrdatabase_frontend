@@ -1,5 +1,5 @@
 import { useState } from "react";
-
+import { API_BASE_URL } from '../config/api'; 
 const Register = () => {
   const [type, setType] = useState(""); // Candidate or Employer
   const [employerStatus, setEmployerStatus] = useState(""); // New or Existing

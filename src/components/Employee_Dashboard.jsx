@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'; 
+import { API_BASE_URL } from '../config/api'; 
 import { 
   User, FileText, MapPin, Briefcase, 
   ChevronLeft, Search, X, Calendar, Building, 
@@ -6,7 +7,7 @@ import {
   List, CheckCircle, Clock as ClockIcon, Mail, UserCheck, HelpCircle,
   LogOut, IndianRupee 
 } from 'lucide-react'; 
-import { getToken } from '../utils/auth'; 
+import { getToken, getUser, isAuthenticated } from '../utils/auth'; 
 
 function allowOnlyLetters(e) {
   const char = e.key;
@@ -30,6 +31,8 @@ export default function EmployeeDashboard() {
   const [editMode, setEditMode] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [adminConnectedJobs, setAdminConnectedJobs] = useState([]);
+  const [error, setError] = useState('');
+  const [showLogoutConfirmation, setShowLogoutConfirmation] = useState(false); // Added for logout confirmation
 
   const [formData, setFormData] = useState({
     full_name: '',
@@ -43,24 +46,56 @@ export default function EmployeeDashboard() {
   const fetchData = async () => {
     try {
       const token = getToken();
+      const user = getUser();
       
-      if (!token) {
+      console.log('🔍 Checking authentication:', { token: !!token, user });
+      
+      if (!token || !isAuthenticated()) {
+        console.log('❌ No valid token found, redirecting to login');
         window.location.href = '/login';
         return;
       }
 
-      // Fetch user data
-      const res = await fetch('http://localhost:4000/users/profile', {
-        headers: { Authorization: `Bearer ${token}` }
+      // Check if user is employee
+      if (user && user.role !== 'employee') {
+        console.log('❌ User is not an employee:', user.role);
+        window.location.href = '/login';
+        return;
+      }
+
+      console.log('📡 Fetching employee profile...');
+      
+      // Fetch user data with better error handling
+      const res = await fetch(`${API_BASE_URL}/users/profile`, {
+        method: 'GET',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'include'
       });
 
-      if (!res.ok) throw new Error('Failed to fetch profile');
+      console.log('📊 Profile response status:', res.status);
+
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          console.log('🔒 Unauthorized access, redirecting to login');
+          localStorage.clear(); // Clear all stored data
+          window.location.href = '/login';
+          return;
+        }
+        throw new Error(`Failed to fetch profile: ${res.status} ${res.statusText}`);
+      }
+      
       const userData = await res.json();
+      console.log('👤 User data received:', userData);
+      
       setEmployeeData(userData);
       
-      // Initialize form data
+      // Initialize form data with fallbacks
       setFormData({
-        full_name: userData.full_name || '',
+        full_name: userData.full_name || userData.name || '',
         phone: userData.phone || '',
         qualification: userData.qualification || '',
         industry: userData.industry || '',
@@ -69,23 +104,57 @@ export default function EmployeeDashboard() {
       });
       
       // Fetch admin connected jobs
-      const adminJobsRes = await fetch('http://localhost:4000/api/employee/admin-connected-jobs', {
-        headers: { Authorization: `Bearer ${token}` }
+      console.log('📡 Fetching admin-connected jobs...');
+      const adminJobsRes = await fetch(`${API_BASE_URL}/api/employee/admin-connected-jobs`, {
+        method: 'GET',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'include'
       });
       
-      if (!adminJobsRes.ok) throw new Error('Failed to fetch admin-connected jobs');
-      const adminJobsData = await adminJobsRes.json();
-      setAdminConnectedJobs(adminJobsData);
+      if (adminJobsRes.ok) {
+        const adminJobsData = await adminJobsRes.json();
+        console.log('💼 Admin jobs data:', adminJobsData);
+        setAdminConnectedJobs(adminJobsData);
+      } else {
+        console.warn('⚠️ Failed to fetch admin jobs:', adminJobsRes.status);
+        setAdminConnectedJobs([]); // Set empty array instead of throwing error
+      }
       
     } catch (error) {
-      console.error('Error:', error);
-      window.location.href = '/login';
+      console.error('💥 Error in fetchData:', error);
+      setError('Failed to load dashboard data. Please try refreshing the page.');
+      
+      // Only redirect to login if it's an auth error
+      if (error.message.includes('401') || error.message.includes('403')) {
+        localStorage.clear();
+        window.location.href = '/login';
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    // Add initial auth check
+    console.log('🚀 EmployeeDashboard mounted');
+    
+    if (!isAuthenticated()) {
+      console.log('❌ Not authenticated, redirecting immediately');
+      window.location.href = '/login';
+      return;
+    }
+
+    const user = getUser();
+    if (!user || user.role !== 'employee') {
+      console.log('❌ Invalid user role or no user data');
+      window.location.href = '/login';
+      return;
+    }
+
     fetchData();
   }, []);
 
@@ -109,20 +178,35 @@ export default function EmployeeDashboard() {
     try {
       setUpdating(true);
       const token = getToken();
-      const response = await fetch('http://localhost:4000/api/employee/profile', {
+      
+      if (!token) {
+        window.location.href = '/login';
+        return;
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/api/employee/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(formData)
       });
 
-      if (!response.ok) throw new Error('Update failed');
+      if (!response.ok) {
+        if (response.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+        throw new Error('Update failed');
+      }
 
       const updatedData = await response.json();
       setEmployeeData({...employeeData, ...updatedData});
       setEditMode(false);
+      setError(''); // Clear any previous errors
       
     } catch (error) {
       console.error('Update error:', error);
@@ -132,8 +216,15 @@ export default function EmployeeDashboard() {
     }
   };
 
+  // Updated handleLogout function
   const handleLogout = () => {
-    localStorage.removeItem('token');
+    setShowLogoutConfirmation(true);
+  };
+
+  // New confirmLogout function
+  const confirmLogout = () => {
+    console.log('🚪 Logging out...');
+    localStorage.clear(); // Clear all localStorage data
     window.location.href = '/login';
   };
 
@@ -148,6 +239,29 @@ export default function EmployeeDashboard() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button 
+            className="bg-primary-green text-white px-4 py-2 rounded-lg mr-2"
+            onClick={() => window.location.reload()}
+          >
+            Try Again
+          </button>
+          <button 
+            className="bg-gray-500 text-white px-4 py-2 rounded-lg"
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!employeeData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -155,10 +269,16 @@ export default function EmployeeDashboard() {
           <User className="text-gray-400 text-6xl mb-4 mx-auto" />
           <p className="text-gray-600">User data not available</p>
           <button 
-            className="mt-4 bg-primary-green text-white px-4 py-2 rounded-lg"
+            className="mt-4 bg-primary-green text-white px-4 py-2 rounded-lg mr-2"
             onClick={() => window.location.reload()}
           >
             Try Again
+          </button>
+          <button 
+            className="mt-4 bg-gray-500 text-white px-4 py-2 rounded-lg"
+            onClick={handleLogout}
+          >
+            Logout
           </button>
         </div>
       </div>
@@ -176,7 +296,7 @@ export default function EmployeeDashboard() {
             onClick={() => setShowSidebar(true)}
           >
             <User size={24} />
-            <span>{employeeData.full_name || 'Employee'}</span>
+            <span>{employeeData.full_name || employeeData.name || 'Employee'}</span>
           </button>
         </div>
       </header>
@@ -185,7 +305,7 @@ export default function EmployeeDashboard() {
       <main className="container mx-auto p-4">
         <div className="bg-gradient-to-r from-teal-800 to-teal-600 rounded-xl shadow-md p-6 mb-6 text-white">
           <h2 className="text-2xl font-bold mb-2">
-            Welcome, {employeeData.full_name || 'Employee'}!
+            Welcome, {employeeData.full_name || employeeData.name || 'Employee'}!
           </h2>
           <p className="opacity-90">Your admin-connected job opportunities</p>
         </div>
@@ -209,7 +329,6 @@ export default function EmployeeDashboard() {
                 </div>
                 
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  
                   <div className="flex items-center">
                     <MapPin className="text-gray-500 mr-3 flex-shrink-0" size={20} />
                     <div>
@@ -324,13 +443,41 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm mx-4">
+            <div className="text-center">
+              <LogOut className="text-red-500 mx-auto mb-4" size={48} />
+              <h3 className="text-lg font-bold mb-2">Confirm Logout</h3>
+              <p className="text-gray-600 mb-6">Are you sure you want to logout?</p>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowLogoutConfirmation(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmLogout}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       {showSidebar && (
         <div className="fixed inset-y-0 right-0 w-full max-w-xs bg-white shadow-lg z-50">
           <div className="flex items-center p-4 border-b">
             <User className="text-primary-green mr-3" size={24} />
             <div>
-              <h3 className="font-bold">{employeeData.full_name || 'Employee'}</h3>
+              <h3 className="font-bold">{employeeData.full_name || employeeData.name || 'Employee'}</h3>
               <p className="text-sm text-gray-500">Employee Profile</p>
             </div>
           </div>

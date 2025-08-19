@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-
+import { API_BASE_URL } from '../config/api'; 
 const TwoAdminDashboard = () => {
   const [jobRequests, setJobRequests] = useState([]);
   const [adminConnectedEmployees, setAdminConnectedEmployees] = useState([]);

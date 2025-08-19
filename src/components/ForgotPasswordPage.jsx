@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail } from 'lucide-react';
+import { API_BASE_URL } from '../config/api'; 
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -11,8 +12,9 @@ export default function ForgotPasswordPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    
     try {
-      const res = await fetch('http://localhost:4000/auth/send-otp', {
+      const res = await fetch(`${API_BASE_URL}/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -20,6 +22,7 @@ export default function ForgotPasswordPage() {
       
       const data = await res.json();
       if (res.ok) {
+        // Navigate to OTP page with email
         navigate('/otp', { state: { email } });
       } else {
         throw new Error(data.error || 'Something went wrong');
@@ -41,7 +44,7 @@ export default function ForgotPasswordPage() {
           Forgot Password
         </h2>
         {message && (
-          <p className={`mb-4 text-center ${message.includes('sent') ? 'text-green-600' : 'text-red-600'}`}>
+          <p className={`mb-4 text-center text-red-600`}>
             {message}
           </p>
         )}
